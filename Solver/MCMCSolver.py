@@ -19,15 +19,18 @@ class MCMCSolver():
               total_epoch=2000,
               lr=1e-4,
               uncondition_prob=1,
+              buffer_size=10000,
               ):
         self.buffer = torch.rand(64, *self.sampler.img_size, device=self.device)
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=1e-5)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         for epoch in range(1, total_epoch + 1):
             pbar = tqdm(loader)
             epoch_loss = 0
+            self.model.train()
             for step, (x, y) in enumerate(pbar, 1):
                 x, y = x.cuda(), y.cuda()
-                selected = torch.randint(low=0, high=self.buffer.shape[0] - 1, size=(round(x.shape[0] * 0.95),))
+                selected = torch.randint(low=0, high=self.buffer.shape[0] - 1,
+                                         size=(round(x.shape[0] * 0.95),))
                 unselected = set(list(range(self.buffer.shape[0]))) - set(selected.numpy().tolist())
                 unselected = torch.tensor(list(unselected), device=self.device)
                 negative_buffer = self.buffer[selected]
@@ -38,11 +41,11 @@ class MCMCSolver():
                 self.buffer = torch.cat([self.buffer, negative], dim=0)
                 positive = self.model(x)
                 negative = self.model(negative)
-                # print(torch.sum(positive), torch.sum(negative))
+                # print(torch.mean(positive), torch.mean(negative))
                 if random.random() < uncondition_prob:  # uncondition
                     regulation_term = torch.mean(positive ** 2) + torch.mean(negative ** 2)
-                    loss = torch.sum(positive - negative)
-                    loss = loss + regulation_term * 0.01
+                    loss = torch.mean(positive - negative)
+                    loss = loss + regulation_term
                 else:
                     pass  # condition
                 optimizer.zero_grad()
@@ -52,6 +55,8 @@ class MCMCSolver():
                 if step % 10 == 0:
                     pbar.set_postfix_str(f'step {step}, loss {epoch_loss / step}')
             torch.save(self.model.state_dict(), 'model.pth')
+            if self.buffer.shape[0] > buffer_size:
+                self.buffer = self.buffer[:buffer_size]
 
     def initial_distribution_sample(self, batch_size):
         # x0 = torch.randn(batch_size, *self.img_size, device=self.device)
