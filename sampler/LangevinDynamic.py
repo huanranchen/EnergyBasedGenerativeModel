@@ -14,7 +14,9 @@ class EnergyBasedLangevinDynamicSampler():
     def get_grad(self, x: Tensor) -> Tensor:
         x.requires_grad = True
         x.grad = None
-        target = self.model(x).sum()
+        target = self.model(x)
+        # print(target)
+        target = target.sum()
         target.backward()
         grad = x.grad.clone()
         x.grad = None
@@ -22,11 +24,11 @@ class EnergyBasedLangevinDynamicSampler():
         return grad
 
     @torch.no_grad()
-    def sample(self, x: Tensor, step=60, lam=0.005):
+    def sample(self, x: Tensor, step=60, lam=0.005, step_size=10):
         for t in range(1, step + 1):
             grad = self.get_grad(x)
-            x = x - lam * grad + torch.randn_like(x) * math.sqrt(lam)
-            # print(grad)
+            x = x - step_size * grad + torch.randn_like(x) * lam
+            # x = x - step_size * grad.sign()
             # print(torch.mean(torch.randn_like(x) * math.sqrt(lam)), torch.mean(lam / 2 * grad))
             x = self.clamp(x)
         return x.detach()

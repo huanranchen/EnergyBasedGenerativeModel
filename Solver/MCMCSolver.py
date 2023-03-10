@@ -26,7 +26,6 @@ class MCMCSolver():
         for epoch in range(1, total_epoch + 1):
             pbar = tqdm(loader)
             epoch_loss = 0
-            self.model.train()
             for step, (x, y) in enumerate(pbar, 1):
                 x, y = x.cuda(), y.cuda()
                 selected = torch.randint(low=0, high=self.buffer.shape[0] - 1,
@@ -34,14 +33,23 @@ class MCMCSolver():
                 unselected = set(list(range(self.buffer.shape[0]))) - set(selected.numpy().tolist())
                 unselected = torch.tensor(list(unselected), device=self.device)
                 negative_buffer = self.buffer[selected]
-                rand_buffer = self.initial_distribution_sample(round(x.shape[0] * 0.05))
+                if random.random() < 0.5:
+                    rand_buffer = self.initial_distribution_sample(round(x.shape[0] * 0.05))
+                else:
+                    rand_buffer = x[:round(x.shape[0] * 0.05)]
                 self.buffer = self.buffer[unselected]
                 negative = torch.cat([negative_buffer, rand_buffer], dim=0)
+                self.model.eval().requires_grad_(False)
                 negative = self.sampler(negative)
                 self.buffer = torch.cat([self.buffer, negative], dim=0)
-                positive = self.model(x)
-                negative = self.model(negative)
-                # print(torch.mean(positive), torch.mean(negative))
+                self.model.train().requires_grad_(True)
+                # self.model.eval()
+                input = torch.cat([x, negative], dim=0)
+                output = self.model(input)
+                positive, negative = output[:x.shape[0]], output[x.shape[0]:]
+                # positive = self.model(x)
+                # negative = self.model(negative)
+                # print(torch.mean(positive), torch.mean(negative), negative[-1])
                 if random.random() < uncondition_prob:  # uncondition
                     regulation_term = torch.mean(positive ** 2) + torch.mean(negative ** 2)
                     loss = torch.mean(positive - negative)
@@ -56,6 +64,7 @@ class MCMCSolver():
                     pbar.set_postfix_str(f'step {step}, loss {epoch_loss / step}')
             torch.save(self.model.state_dict(), 'model.pth')
             if self.buffer.shape[0] > buffer_size:
+                self.buffer = self.buffer[torch.randperm(self.buffer.shape[0])]
                 self.buffer = self.buffer[:buffer_size]
 
     def initial_distribution_sample(self, batch_size):
