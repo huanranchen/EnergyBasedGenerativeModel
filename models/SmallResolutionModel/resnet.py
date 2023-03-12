@@ -12,7 +12,7 @@ adding hyperparameter norm_layers
 Huanran Chen
 """
 import math
-
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -39,6 +39,14 @@ __all__ = [
     "resnet8x4_crd",
     "resnet32x4_crd",
 ]
+
+
+class Swish(nn.Module):
+    def __init__(self, **kwargs):
+        super(Swish, self).__init__()
+
+    def forward(self, x):
+        return x * torch.sigmoid(x)
 
 
 class Normalizer4CRD(nn.Module):
@@ -69,7 +77,7 @@ class BasicBlock(nn.Module):
         self.is_last = is_last
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = norm_layer(planes)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = Swish(inplace=True)
         self.conv2 = conv3x3(planes, planes)
         self.bn2 = norm_layer(planes)
         self.downsample = downsample
@@ -105,7 +113,7 @@ class Bottleneck(nn.Module):
         self.bn2 = norm_layer(planes)
         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = norm_layer(planes * 4)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = Swish(inplace=True)
         self.downsample = downsample
         self.stride = stride
 
@@ -154,7 +162,7 @@ class ResNet(nn.Module):
         self.inplanes = num_filters[0]
         self.conv1 = nn.Conv2d(3, num_filters[0], kernel_size=3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(num_filters[0])
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = Swish(inplace=True)
         self.layer1 = self._make_layer(block, num_filters[1], n, norm_layer)
         self.layer2 = self._make_layer(block, num_filters[2], n, norm_layer, stride=2)
         self.layer3 = self._make_layer(block, num_filters[3], n, norm_layer, stride=2)
@@ -226,10 +234,10 @@ class ResNet(nn.Module):
         f2 = x
         x = self.layer3(x)  # 8x8
         f3 = x
-
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
-        x = self.fc(x)
+        x = x.sum(1)
+        # x = self.fc(x)
 
         if is_feat:
             return [f1, f2, f3, f3], x
@@ -383,11 +391,11 @@ class ResNet_CRD(nn.Module):
         self.inplanes = num_filters[0]
         self.conv1 = nn.Conv2d(3, num_filters[0], kernel_size=3, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(num_filters[0])
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = Swish(inplace=True)
         self.layer1 = self._make_layer(block, num_filters[1], n)
         self.layer2 = self._make_layer(block, num_filters[2], n, stride=2)
         self.layer3 = self._make_layer(block, num_filters[3], n, stride=2)
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        # self.avgpool = nn.Pool((1, 1))
         self.fc = nn.Linear(num_filters[3] * block.expansion, num_classes)
         linear = nn.Linear(num_filters[3] * block.expansion, 128, bias=True)
         self.normalizer = Normalizer4CRD(linear, power=2)
@@ -453,7 +461,9 @@ class ResNet_CRD(nn.Module):
         x = self.layer2(x)  # 16x16
         x = self.layer3(x)  # 8x8
 
-        x = self.avgpool(x)
+        # x = self.avgpool(x)
+        print(x.shape)
+        assert False
         crdout = x
         x = x.view(x.size(0), -1)
         x = self.fc(x)
